@@ -1,151 +1,160 @@
-require('./config')
-const { useSingleFileAuthState, DisconnectReason, msgRetryCounterMap } = require('@adiwajshing/baileys')
-const WebSocket = require('ws')
-const ws = require('ws')
-const { CONNECTING } = ws
-const path = require('path')
-const { join } = require('path')
-const fs = require('fs')
-const yargs = require('yargs/yargs')
-const { readdirSync, statSync, unlinkSync, existsSync, readFileSync, watch } = require('fs')
-const cp = require('child_process')
-const chalk = require('chalk')
-const _ = require('lodash')
-const { makeWASocket } = require('./lib/simple.js')
-const syntaxerror = require('syntax-error')
-const P = require('pino')
-const { tmpdir } = require('os')
-const os = require('os')
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+require('./config.js')
+let { WAConnection: _WAConnection } = require('@adiwajshing/baileys')
+let { generate } = require('qrcode-terminal')
+let syntaxerror = require('syntax-error')
 let simple = require('./lib/simple')
-var low
-try { 
-low = require('lowdb')
-} catch (e) {
-low = require('./lib/lowdb')}
-const { Low, JSONFile } = low
-const mongoDB = require('./lib/mongoDB')
+//  let logs = require('./lib/logs')
+let { promisify } = require('util')
+let yargs = require('yargs/yargs')
+let Readline = require('readline')
+let cp = require('child_process')
+let path = require('path')
+let fs = require('fs')
+
+let rl = Readline.createInterface(process.stdin, process.stdout)
+let WAConnection = simple.WAConnection(_WAConnection)
+
+//global.owner = Object.keys(global.Owner)
 global.API = (name, path = '/', query = {}, apikeyqueryname) => (name in global.APIs ? global.APIs[name] : name) + path + (query || apikeyqueryname ? '?' + new URLSearchParams(Object.entries({ ...query, ...(apikeyqueryname ? { [apikeyqueryname]: global.APIKeys[name in global.APIs ? global.APIs[name] : name] } : {}) })) : '')
 global.timestamp = {
-start: new Date }
-const PORT = process.env.PORT || process.env.SERVER_PORT || 3000
+  start: new Date
+}
+// global.LOGGER = logs()
+const PORT = process.env.PORT || 3000
 global.opts = new Object(yargs(process.argv.slice(2)).exitProcess(false).parse())
-global.prefix = new RegExp('^[' + (opts['prefix'] || 'xzXZ/i!#$%+£¢€¥^°=¶∆×÷π√✓©®:;?&.\\-HhhHBb.aA').replace(/[|\\{}()[\]^$+*?.\-\^]/g, '\\$&') + ']')
-global.db = new Low(
-  /https?:\/\//.test(opts['db'] || '') ?
-    new cloudDBAdapter(opts['db']) : /mongodb/.test(opts['db']) ?
-      new mongoDB(opts['db']) :
-      new JSONFile(`${opts._[0] ? opts._[0] + '_' : ''}database.json`)
-)
-global.DATABASE = global.db // Backwards Compatibility
-global.loadDatabase = async function loadDatabase() {
-  if (global.db.READ) return new Promise((resolve) => setInterval(function () { (!global.db.READ ? (clearInterval(this), resolve(global.db.data == null ? global.loadDatabase() : global.db.data)) : null) }, 1 * 1000))
-  if (global.db.data !== null) return
-  global.db.READ = true
-  await global.db.read()
-  global.db.READ = false
-  global.db.data = {
-    users: {},
-    chats: {},
-    stats: {},
-    msgs: {},
-    sticker: {},
-    ...(global.db.data || {})
+
+global.prefix = new RegExp('^[' + (opts['prefix'] || '‎xzXZ/i!#$%+£¢€¥^°=¶∆×÷π√✓©®:;?&.\\-HhhHBb.*aA').replace(/[|\\{}()[\]^$+*?.\-\^]/g, '\\$&') + ']')
+
+global.DATABASE = new (require('./lib/database'))(`${opts._[0] ? opts._[0] + '_' : ''}database.json`, null, 2)
+if (!global.DATABASE.data.users) global.DATABASE.data = {
+  users: {},
+  chats: {},
+  stats: {},
+  msgs: {},
+  sticker: {},
+}
+if (!global.DATABASE.data.chats) global.DATABASE.data.chats = {}
+if (!global.DATABASE.data.stats) global.DATABASE.data.stats = {}
+if (!global.DATABASE.data.msgs) global.DATABASE.data.msgs = {}
+if (!global.DATABASE.data.sticker) global.DATABASE.data.sticker = {}
+global.conn = new WAConnection()
+conn.browserDescription = ['The Shadow Brokers - Bot', 'Firefox', '3.0']
+let authFile = `${opts._[0] || 'session'}.data.json`
+if (fs.existsSync(authFile)) conn.loadAuthInfo(authFile)
+if (opts['trace']) conn.logger.level = 'trace'
+if (opts['debug']) conn.logger.level = 'debug'
+if (opts['big-qr'] || opts['server']) conn.on('qr', qr => generate(qr, { small: false }))
+let lastJSON = JSON.stringify(global.DATABASE.data)
+if (!opts['test']) setInterval(() => {
+  conn.logger.info('Guardando database...')
+  if (JSON.stringify(global.DATABASE.data) == lastJSON) conn.logger.info('Database actualizada!!')
+  else {
+    global.DATABASE.save()
+    conn.logger.info('Database guardada!!')
+    lastJSON = JSON.stringify(global.DATABASE.data)
   }
-  global.db.chain = _.chain(global.db.data)
-}
-loadDatabase()
-
-global.authFile = `${opts._[0] || 'session'}.data.json`
-const { state, saveState } = useSingleFileAuthState(global.authFile)
-
-const connectionOptions = {
-  printQRInTerminal: true,
-  auth: state,
-  logger: P({ level: 'silent'}),
-  downloadHistory: false,
-  browser: ['SIMPLE-BOT','Safari','1.0.0']
-}
-
-global.conn = simple.makeWASocket(connectionOptions)
-
-if (!opts['test']) {
-  if (global.db) setInterval(async () => {
-    if (global.db.data) await global.db.write()
-if (opts['autocleartmp'] && (global.support || {}).find) (tmp = [os.tmpdir(), 'tmp'], tmp.forEach(filename => cp.spawn('find', [filename, '-amin', '3', '-type', 'f', '-delete'])))
-}, 30 * 1000)}
+}, 1800 * 1000) // Autoguardado realizandose cada 30 minutos
 if (opts['server']) require('./server')(global.conn, PORT)
 
-async function connectionUpdate(update) {
-  const { connection, lastDisconnect, isNewLogin } = update
-  if (isNewLogin) conn.isInit = true
-  const code = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.output?.payload?.statusCode
-  if (code && code !== DisconnectReason.loggedOut && conn?.ws.readyState !== CONNECTING) {
-    console.log(global.reloadHandler(true))
-    //console.log(await global.reloadHandler(true).catch(console.error))
-    global.timestamp.connect = new Date
+conn.version = [2, 2143, 3]
+conn.connectOptions.maxQueryResponseTime = 60_000
+if (opts['test']) {
+  conn.user = {
+    jid: '2219191@s.whatsapp.net',
+    name: 'test',
+    phone: {}
   }
-  if (global.db.data == null) loadDatabase()
-  if (connection == 'open') {console.log(chalk.yellow('▣─────────────────────────────···\n│\n│❧ 𝙲𝙾𝙽𝙴𝙲𝚃𝙰𝙳𝙾 𝙲𝙾𝚁𝚁𝙴𝙲𝚃𝙰𝙼𝙴𝙽𝚃𝙴 𝙰𝙻 𝚆𝙷𝙰𝚃𝚂𝙰𝙿𝙿 ✅\n│\n▣─────────────────────────────···'))}
-}
+  conn.prepareMessageMedia = (buffer, mediaType, options = {}) => {
+    return {
+      [mediaType]: {
+        url: '',
+        mediaKey: '',
+        mimetype: options.mimetype || '',
+        fileEncSha256: '',
+        fileSha256: '',
+        fileLength: buffer.length,
+        seconds: options.duration,
+        fileName: options.filename || 'file',
+        gifPlayback: options.mimetype == 'image/gif' || undefined,
+        caption: options.caption,
+        ptt: options.ptt
+      }
+    }
+  }
 
+  conn.sendMessage = async (chatId, content, type, opts = {}) => {
+    let message = await conn.prepareMessageContent(content, type, opts)
+    let waMessage = await conn.prepareMessageFromContent(chatId, message, opts)
+    if (type == 'conversation') waMessage.key.id = require('crypto').randomBytes(16).toString('hex').toUpperCase()
+    conn.emit('chat-update', {
+      jid: conn.user.jid,
+      hasNewMessage: true,
+      count: 1,
+      messages: {
+        all() {
+          return [waMessage]
+        }
+      }
+    })
+  }
+  rl.on('line', line => conn.sendMessage('123@s.whatsapp.net', line.trim(), 'conversation'))
+} else {
+  rl.on('line', line => {
+    global.DATABASE.save()
+    process.send(line.trim())
+  })
+  conn.connect().then(() => {
+    fs.writeFileSync(authFile, JSON.stringify(conn.base64EncodedAuthInfo(), null, '\t'))
+    global.timestamp.connect = new Date
+  })
+}
 process.on('uncaughtException', console.error)
 // let strQuot = /(["'])(?:(?=(\\?))\2.)*?\1/
 
-const imports = (path) => {
-  path = require.resolve(path)
-  let modules, retry = 0
-  do {
-    if (path in require.cache) delete require.cache[path]
-    modules = require(path)
-    retry++
-  } while ((!modules || (Array.isArray(modules) || modules instanceof String) ? !(modules || []).length : typeof modules == 'object' && !Buffer.isBuffer(modules) ? !(Object.keys(modules || {})).length : true) && retry <= 10)
-  return modules
-}
-
-function clearTmp() {
-const tmp = [tmpdir(), join(__dirname, './tmp')]
-const filename = []
-tmp.forEach(dirname => readdirSync(dirname).forEach(file => filename.push(join(dirname, file))))
-return filename.map(file => {
-const stats = statSync(file)
-if (stats.isFile() && (Date.now() - stats.mtimeMs >= 1000 * 60 * 3)) return unlinkSync(file) // 3 minutes
-return false
-})}
-
-
 let isInit = true
-global.reloadHandler = function (restatConn) {
-  let handler = imports('./handler')
-  if (restatConn) {
-    try { global.conn.ws.close() } catch { }
-    global.conn = {
-      ...global.conn, ...simple.makeWASocket(connectionOptions)
-    }
-  }
+global.reloadHandler = function () {
+  let handler = require('./handler')
   if (!isInit) {
-    conn.ev.off('messages.upsert', conn.handler)
-    conn.ev.off('group-participants.update', conn.participantsUpdate)
-    conn.ev.off('connection.update', conn.connectionUpdate)
-    conn.ev.off('creds.update', conn.credsUpdate)
+    conn.off('chat-update', conn.handler)
+    conn.off('message-delete', conn.onDelete)
+    conn.off('group-participants-update', conn.onParticipantsUpdate)
+    conn.off('CB:action,,call', conn.onCall)
   }
-
-  conn.welcome = '*╔══════════════*\n*╟❧ @subject*\n*╠══════════════*\n*╟❧ @user*\n*╟❧ 𝙱𝙸𝙴𝙽𝚅𝙴𝙽𝙸𝙳𝙾/𝙰* \n*║*\n*╟❧ 𝙳𝙴𝚂𝙲𝚁𝙸𝙿𝙲𝙸𝙾𝙽 𝙳𝙴𝙻 𝙶𝚁𝚄𝙿𝙾:*\n*╟❧* @desc\n*║*\n*╟❧ 𝙳𝙸𝚂𝙵𝚁𝚄𝚃𝙰 𝚃𝚄 𝙴𝚂𝚃𝙰𝙳𝙸𝙰!!*\n*╚══════════════*'
-  conn.bye = '*╔══════════════*\n*╟❧ @user*\n*╟❧ 𝙷𝙰𝚂𝚃𝙰 𝙿𝚁𝙾𝙽𝚃𝙾 👋🏻* \n*╚══════════════*'  
-  conn.spromote = '@user sekarang admin!'
-  conn.sdemote = '@user sekarang bukan admin!'
-  conn.handler = handler.handler.bind(conn)
-  conn.participantsUpdate = handler.participantsUpdate.bind(conn)
-  conn.connectionUpdate = connectionUpdate.bind(conn)
-  conn.credsUpdate = saveState.bind(conn)
-
-  conn.ev.on('messages.upsert', conn.handler)
-  conn.ev.on('group-participants.update', conn.participantsUpdate)
-  conn.ev.on('connection.update', conn.connectionUpdate)
-  conn.ev.on('creds.update', conn.credsUpdate)
+  conn.welcome = '┏━━━━━━━━━━━━\n┃──〘 *WELCOME* 〙──\n┃━━━━━━━━━━━━\n┃ *_💚 @user bienvenid@ a_* \n┃ *_@subject 💚_*\n┃\n┃=> *_En este grupo podrás_*\n┃ *_encontrar:_*\n┠⊷ *Amistades 👻* \n┠⊷ *Desmadre 🥵* \n┠⊷ *Relajo 😾* \n┠⊷ *Enemig@s 😼💚* :\n┠⊷ *Un Bot Sexy💚😹*\n┃\n┃=> *_Puedes solicitar mi lista de_*\n┃ *_comandos con:_*\n┠⊷ *#menu*\n┃\n┃=> *_Aquí tienes la descripción_* \n┃ *_del grupo, léela!!_*\n┃\n\n@desc\n\n┃ \n┃ *_❗  Disfruta de tu_* \n┃ *_estadía en el grupo  ❗_*  \n┃\n┗━━━━━━━━━━━'
+  conn.bye = '┏━━━━━━━━━━━━\n┃──〘 *ADIOS* 〙───\n┃━━━━━━━━━━━━\n┃ *_🙀💚 Se fue @user_* \n┃ *_Que dios lo bendiga️_* \n┃ *_sea gay de por vida 🥵🤣🔥_*\n┗━━━━━━━━━━'
+  conn.spromote = '*@user 𝐁𝐈𝐄𝐍𝐕𝐄𝐍𝐈𝐃𝐎!! 𝐀𝐇𝐎𝐑𝐀 𝐅𝐎𝐑𝐌𝐀𝐒 𝐏𝐀𝐑𝐓𝐄 𝐃𝐄 𝐋𝐎𝐒 𝐀𝐃𝐌𝐈𝐍𝐈𝐒𝐓𝐑𝐀𝐃𝐎𝐑𝐄𝐒 𝐃𝐄𝐋 𝐆𝐑𝐔𝐏𝐎*'
+  conn.sdemote = '*@user 𝐀𝐇𝐎𝐑𝐀 𝐘𝐀 𝐅𝐎𝐑𝐌𝐀𝐒 𝐏𝐀𝐑𝐓𝐄 𝐃𝐄 𝐋𝐎𝐒 𝐀𝐃𝐌𝐈𝐍𝐈𝐒𝐓𝐑𝐀𝐃𝐎𝐑𝐄𝐒 𝐃𝐄𝐋 𝐆𝐑𝐔𝐏𝐎*'
+  conn.handler = handler.handler
+  conn.onDelete = handler.delete
+  conn.onParticipantsUpdate = handler.participantsUpdate
+  conn.onCall = handler.onCall
+  conn.on('chat-update', conn.handler)
+  conn.on('message-delete', conn.onDelete)
+  conn.on('group-participants-update', conn.onParticipantsUpdate)
+  conn.on('CB:action,,call', conn.onCall)
+  if (isInit) {
+    conn.on('error', conn.logger.error)
+    conn.on('close', () => {
+      setTimeout(async () => {
+        try {
+          if (conn.state === 'close') {
+            if (fs.existsSync(authFile)) await conn.loadAuthInfo(authFile)
+            await conn.connect()
+            fs.writeFileSync(authFile, JSON.stringify(conn.base64EncodedAuthInfo(), null, '\t'))
+            global.timestamp.connect = new Date
+          }
+        } catch (e) {
+          conn.logger.error(e)
+        }
+      }, 5000)
+    })
+  }
   isInit = false
   return true
 }
 
+// Plugin Loader
 let pluginFolder = path.join(__dirname, 'plugins')
 let pluginFilter = filename => /\.js$/.test(filename)
 global.plugins = {}
@@ -157,8 +166,8 @@ for (let filename of fs.readdirSync(pluginFolder).filter(pluginFilter)) {
     delete global.plugins[filename]
   }
 }
-//console.log(Object.keys(global.plugins))
-global.reload = (_ev, filename) => {
+console.log(Object.keys(global.plugins))
+global.reload = (_event, filename) => {
   if (pluginFilter(filename)) {
     let dir = path.join(pluginFolder, filename)
     if (dir in require.cache) {
@@ -169,7 +178,7 @@ global.reload = (_ev, filename) => {
         return delete global.plugins[filename]
       }
     } else conn.logger.info(`requiring new plugin '${filename}'`)
-    let err = syntaxerror(fs.readFileSync(dir), filename)
+    let err = syntaxerror(fs.readFileSync(dir), fs.existsSync(dir) ? filename : 'Execution Function')
     if (err) conn.logger.error(`syntax error while loading '${filename}'\n${err}`)
     else try {
       global.plugins[filename] = require(dir)
@@ -183,6 +192,9 @@ global.reload = (_ev, filename) => {
 Object.freeze(global.reload)
 fs.watch(path.join(__dirname, 'plugins'), global.reload)
 global.reloadHandler()
+process.on('exit', () => global.DATABASE.save())
+
+
 
 // Quick Test
 async function _quickTest() {
@@ -193,7 +205,6 @@ async function _quickTest() {
     cp.spawn('convert'),
     cp.spawn('magick'),
     cp.spawn('gm'),
-    cp.spawn('find', ['--version'])
   ].map(p => {
     return Promise.race([
       new Promise(resolve => {
@@ -206,28 +217,24 @@ async function _quickTest() {
       })
     ])
   }))
-  let [ffmpeg, ffprobe, ffmpegWebp, convert, magick, gm, find] = test
-  //console.log(test)
+  let [ffmpeg, ffprobe, ffmpegWebp, convert, magick, gm] = test
+  console.log(test)
   let s = global.support = {
     ffmpeg,
     ffprobe,
     ffmpegWebp,
     convert,
     magick,
-    gm,
-    find
+    gm
   }
-  // require('./lib/sticker').support = s
+  require('./lib/sticker').support = s
   Object.freeze(global.support)
 
-  /*if (!s.ffmpeg) conn.logger.warn('Please install ffmpeg for sending videos (pkg install ffmpeg)')
+  if (!s.ffmpeg) conn.logger.warn('Please install ffmpeg for sending videos (pkg install ffmpeg)')
   if (s.ffmpeg && !s.ffmpegWebp) conn.logger.warn('Stickers may not animated without libwebp on ffmpeg (--enable-ibwebp while compiling ffmpeg)')
-  if (!s.convert && !s.magick && !s.gm) conn.logger.warn('Stickers may not work without imagemagick if libwebp on ffmpeg doesnt isntalled (pkg install imagemagick)')*/
+  if (!s.convert && !s.magick && !s.gm) conn.logger.warn('Stickers may not work without imagemagick if libwebp on ffmpeg doesnt isntalled (pkg install imagemagick)')
 }
-setInterval(async () => {
-var a = await clearTmp()
-console.log(chalk.cyanBright(`\n▣────────[ 𝙰𝚄𝚃𝙾𝙲𝙻𝙴𝙰𝚁𝚃𝙼𝙿 ]───────────···\n│\n▣─❧ 𝙰𝚁𝙲𝙷𝙸𝚅𝙾𝚂 𝙴𝙻𝙸𝙼𝙸𝙽𝙰𝙳𝙾𝚂 ✅\n│\n▣────────────────────────────────────···\n`))
-}, 180000)
+
 _quickTest()
-.then(() => conn.logger.info('Ƈᴀʀɢᴀɴᴅᴏ．．．\n'))
-.catch(console.error)
+  .then(() => conn.logger.info('Quick Test Done'))
+  .catch(console.error)
