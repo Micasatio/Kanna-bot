@@ -1,7 +1,6 @@
 //============= Datos del Bot =============//
 
 global.owner = ['50763596565']
-global.owner = ['595983186566']
 global.packname = '(☞ﾟ∀ﾟ)☞'
 global.author = 'KANNABOT'
 global.wm = 'KANNABOT'
