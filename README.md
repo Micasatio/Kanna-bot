@@ -1,6 +1,6 @@
 # `🔥 Kᗩᑎᑎᗩ-ᗷOT 🔥`
 
-### `—◉ 👑 DUDAS SOBRE EL BOT?, CONTACTANOS 👑`
+### `—◉ 👑 D̳̿͟͞UDAS SOBRE EL BOT?,CONTACTANOS  👑`
 <a href="http://wa.me/50763596565" target="blank"><img src="https://img.shields.io/badge/Kanna-whatsapp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" /></a>
 
 <a href="http://wa.me/595983186566" target="blank"><img src="https://img.shields.io/badge/BLACK-BOT-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" /></a>
@@ -19,8 +19,8 @@ ESCRIBE LOS SIGUIENTES COMANDOS UNO POR UNO:
 > apt install nodejs -y
 > apt install ffmpeg -y
 > apt install imagemagick -y
-> git clone https://github.com/BrunoSobrino/SimpleBot
-> cd SimpleBot
+> git clone https://github.com/Micasatio/Kanna-bot
+> cd Kanna-bot
 > yarn install
 > npm install
 > npm update
@@ -32,7 +32,7 @@ ESCRIBE LOS SIGUIENTES COMANDOS UNO POR UNO:
 ```bash
 ESCRIBE LOS SIGUIENTES COMANDOS UNO POR UNO:
 > cd 
-> cd SimpleBot
+> cd Kanna-bot
 > npm start
 ```
 
@@ -40,12 +40,16 @@ ESCRIBE LOS SIGUIENTES COMANDOS UNO POR UNO:
 ```bash
 ESCRIBE LOS SIGUIENTES COMANDOS UNO POR UNO:
 > cd 
-> cd SimpleBot
+> cd Kanna-bot
 > rm -rf session.data.json
 > npm start
 ```
 
 ## `EDITOR Y PORPIETARIO DEL BOT` 
-<a href="https://github.com/BrunoSobrino"><img src="https://github.com/BrunoSobrino.png" width="300" height="300" alt="BrunoSobrino"/></a>
+<a href="https://github.com/Antonio32114"><img src="https://github.com/Antonio32114.png" width="300" height="300" alt="BrunoSobrino"/></a>
 
-`TheMystic-Bot-MD _ By Bruno Sobrino`
+             
+<a href="https://github.com/Micasatio"><img src="https://github.com/Micasatio.png" width="300" height="300" alt="BrunoSobrino"/></a>
+        
+
+
